@@ -1,0 +1,6 @@
+lex.yy.c
+ej1
+ej2
+ej3
+*.o
+.DS_Store
