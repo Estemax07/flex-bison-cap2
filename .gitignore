@@ -4,3 +4,4 @@ ej2
 ej3
 *.o
 .DS_Store
+*.h

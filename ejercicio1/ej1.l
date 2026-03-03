@@ -2,11 +2,68 @@
 
 %{
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+struct bufstack {
+  struct bufstack *prev;
+  YY_BUFFER_STATE bs;
+  int lineno;
+  char *filename;
+  FILE *f;
+} *curbs = 0;
+
+char *curfilename = 0;
+
+int newfile(char *fn) {
+  FILE *f = fopen(fn, "r");
+  if(!f) {
+    perror(fn);
+    return 0;
+  }
+
+  struct bufstack *n = malloc(sizeof(*n));
+  if(!n) { perror("malloc"); exit(1); }
+
+  n->prev = curbs;
+  n->bs = YY_CURRENT_BUFFER;
+  n->lineno = yylineno;
+  n->filename = curfilename;
+  n->f = yyin;
+
+  curbs = n;
+
+  yyin = f;
+  yy_switch_to_buffer(yy_create_buffer(yyin, YY_BUF_SIZE));
+
+  yylineno = 1;
+  curfilename = fn;
+
+  return 1;
+}
+
+int popfile(void) {
+  if(!curbs) return 0;
+
+  fclose(yyin);
+  yy_delete_buffer(YY_CURRENT_BUFFER);
+
+  struct bufstack *p = curbs;
+  curbs = p->prev;
+
+  yyin = p->f;
+  yy_switch_to_buffer(p->bs);
+
+  yylineno = p->lineno;
+  curfilename = p->filename;
+
+  free(p);
+  return 1;
+}
 %}
 
 %%
-^#[ \t]*include[ \t]*[\"<][^ \t\n\">]+[\">][^\n]*\n {
+^#[ \t]*include[ \t]*[\"<][^\n]*\n {
   char name[512];
   int i = 0;
 
@@ -20,22 +77,25 @@
   }
   name[i] = '\0';
 
-  printf("INCLUDE encontrado (linea %d): %s\n", yylineno - 1, name);
+  if(!newfile(strdup(name))) yyterminate();
 }
 
-^[^#\n][^\n]*\n {
-  printf("LINEA normal %d: %s", yylineno - 1, yytext);
-}
+^[^#\n][^\n]*\n                  { fputs(yytext, stdout); }
 
-^#[^\n]*\n {
-  printf("LINEA # (no include) %d: %s", yylineno - 1, yytext);
-}
+^#[^\n]*\n                       { fputs(yytext, stdout); }
 
-^[^\n]+ {
-  printf("ULTIMA linea %d: %s\n", yylineno, yytext);
-}
+<<EOF>>                          { if(!popfile()) yyterminate(); }
+
+.                                { fputc(yytext[0], stdout); }
 %%
-int main(void) {
+
+int main(int argc, char **argv) {
+  if(argc > 1) {
+    curfilename = strdup(argv[1]);
+    if(!newfile(strdup(argv[1]))) return 1;
+  } else {
+    curfilename = "(stdin)";
+  }
   yylex();
   return 0;
 }
